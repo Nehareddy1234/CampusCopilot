@@ -45,9 +45,11 @@ app.post('/login', async (req: Request, res: Response) => {
 
   try {
     const result = await loginToLMS(username.trim(), password, validatedLmsUrl.toString());
-    const digest = await generateDailyDigest(result.context, apiKey.trim());
+    const filteredRecords = result.records.filter(r => r.userId === result.userId);
+    const digestContext = JSON.stringify(filteredRecords);
+    const digest = await generateDailyDigest(digestContext, apiKey.trim());
     // Do not retain credentials, API keys, assignments, or chat state on the server.
-    res.json({ success: true, digest, context: result.context, assignments: result.assignments });
+    res.json({ success: true, digest, records: result.records, userId: result.userId, allowlist: result.allowlist, assignments: result.assignments });
   } catch (error) {
     const message = (error as Error).message;
     console.error('LMS login failed:', message);
@@ -57,10 +59,14 @@ app.post('/login', async (req: Request, res: Response) => {
 
 app.post('/chat', async (req: Request, res: Response) => {
   if (!allowRequest(req, res)) return;
-  const { message, apiKey, context, history = [] } = req.body || {};
-  if (typeof message !== 'string' || !message.trim() || message.length > 2_000 || !validApiKey(apiKey) || typeof context !== 'string') {
+  const { message, apiKey, records, userId, history = [] } = req.body || {};
+  if (typeof message !== 'string' || !message.trim() || message.length > 2_000 || !validApiKey(apiKey) || !Array.isArray(records) || userId === undefined) {
     return res.status(400).json({ error: 'Invalid chat request.' });
   }
+
+  // Filter records dynamically based on active user id
+  const filteredRecords = records.filter(r => r.userId === userId);
+  const context = JSON.stringify(filteredRecords);
 
   const safeHistory = Array.isArray(history)
     ? history.slice(-10).filter(item => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string' && item.content.length <= 4_000)
