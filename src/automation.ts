@@ -26,6 +26,7 @@ export interface Assignment {
   title: string;
   deadlineString: string;
   deadlineISO: string;
+  submissionStatus?: string;
 }
 
 export async function loginToLMS(username: string, password: string, lmsUrl = DEFAULT_LMS_URL): Promise<ScrapeResult> {
@@ -58,8 +59,8 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
     const title = await page.title();
     console.log(`Logged in. Title: ${title}`);
 
-    if (!page.url().includes('/my/')) {
-       await page.goto(new URL('/my/', lmsUrl).toString(), { waitUntil: "domcontentloaded" });
+    if (!page.url().includes('/my/courses.php')) {
+       await page.goto(new URL('/my/courses.php', lmsUrl).toString(), { waitUntil: "domcontentloaded" });
     }
 
     // Extract user ID using Moodle's global config or profile links
@@ -106,12 +107,39 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
       throw new Error("Unable to select the LMS In progress course filter. Refusing to scrape archived courses.");
     }
 
-    // Try to find course links strictly within myoverview or frontpage-course-list
+    // Handle pagination/infinite scrolling to capture all course cards
+    console.log("Loading all courses...");
+    let previousHeight = 0;
+    while (true) {
+      const currentHeight = await page.evaluate(() => document.body.scrollHeight);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1000);
+
+      const loadMoreBtn = await page.$('button[data-action="more-courses"], .loadmore, button:has-text("Show more")');
+      if (loadMoreBtn) {
+        const isVisible = await loadMoreBtn.isVisible();
+        if (isVisible) {
+          try {
+            await loadMoreBtn.click();
+            await page.waitForTimeout(1500);
+          } catch (e) {}
+        }
+      }
+
+      const newHeight = await page.evaluate(() => document.body.scrollHeight);
+      if (newHeight === previousHeight) {
+        break; // Reached the bottom or no more courses loaded
+      }
+      previousHeight = newHeight;
+    }
+
+    // Try to find course links strictly extracting text from .coursename or .multiline text nodes
     console.log("Finding visible in-progress courses...");
-    const courseLinks = await page.$$eval('.block_myoverview a[href*="course/view.php?id="], #frontpage-course-list a[href*="course/view.php?id="], [data-region="courses-view"] a[href*="course/view.php?id="]', links =>
+    const courseLinks = await page.$$eval('a[href*="course/view.php?id="]', links =>
       links.map(a => {
         const el = a as HTMLElement;
-        const text = el.innerText.trim() || el.textContent?.trim() || el.getAttribute('title') || '';
+        const nameEl = el.querySelector('.coursename, .multiline') as HTMLElement;
+        const text = nameEl ? (nameEl.innerText.trim() || nameEl.textContent?.trim() || '') : (el.innerText.trim() || el.textContent?.trim() || el.getAttribute('title') || '');
         const href = (a as HTMLAnchorElement).href;
 
         let courseId = -1;
@@ -121,7 +149,7 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
           if (idParam) courseId = parseInt(idParam, 10);
         } catch (e) {}
 
-        const card = el.closest('[data-courseid], .card, .coursebox');
+        const card = el.closest('[data-courseid], .card, .coursebox, .course-region');
         const visible = !!(card || el).getClientRects().length && getComputedStyle(card || el).visibility !== 'hidden';
         return { text, href, visible, courseId };
       }).filter(link => link.text.length > 0 && link.visible && !isNaN(link.courseId) && link.courseId > 0)
@@ -166,6 +194,7 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
             // Navigate to assignment page to extract actual deadline
             let deadline = "Unknown deadline";
             let isAssignmentOpen = false;
+            let extractedSubmissionStatus = '';
             try {
               console.log(`Checking assignment deadline: ${a.text}`);
               const assignPage = await browser.newPage();
@@ -190,9 +219,10 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
                 const isClosed = /\b(closed|not available|submission closed|submitted for grading)\b/i.test(submissionStatus)
                   || /this assignment is not currently available|submissions are closed/i.test(pageText);
 
-                return { due, isOpen: !isClosed };
+                return { due, isOpen: !isClosed, submissionStatus };
               });
               isAssignmentOpen = assignmentStatus.isOpen;
+              extractedSubmissionStatus = assignmentStatus.submissionStatus;
 
               let extracted = assignmentStatus.due;
               if (!extracted) extracted = await assignPage.evaluate(() => {
@@ -216,10 +246,13 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
             }
 
             const deadlineDate = parseMoodleDate(deadline);
-            if (isAssignmentOpen && deadlineDate && isUpcoming(deadlineDate)) {
-              if (upcomingAssignmentCount === 0) courseOutput += `Upcoming assignments:\n`;
+            if (deadlineDate) {
+              if (upcomingAssignmentCount === 0) courseOutput += `Assignments:\n`;
               courseOutput += `  - ${a.text}\n`;
               courseOutput += `    Due: ${deadline}\n`;
+              if (extractedSubmissionStatus) {
+                courseOutput += `    Status: ${extractedSubmissionStatus}\n`;
+              }
               upcomingAssignmentCount++;
               assignmentsToSave.push({
                 userId,
@@ -228,13 +261,14 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
                 title: a.text,
                 deadlineString: deadline,
                 // ISO preserves the exact LMS date and time for reminder calculations.
-                deadlineISO: deadlineDate.toISOString()
+                deadlineISO: deadlineDate.toISOString(),
+                submissionStatus: extractedSubmissionStatus
               });
             } else {
-              console.log(`Ignoring closed assignment or assignment without a future due date: ${a.text}`);
+              console.log(`Ignoring assignment without a parseable due date: ${a.text}`);
             }
           }
-          if (upcomingAssignmentCount === 0) courseOutput += `  - No open assignments with a future due date.\n`;
+          if (upcomingAssignmentCount === 0) courseOutput += `  - No explicit assignments with a valid due date found.\n`;
         } else {
           courseOutput += `  - No explicit assignments found on the main course page.\n`;
         }
