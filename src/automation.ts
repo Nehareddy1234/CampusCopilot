@@ -6,12 +6,22 @@ const DEFAULT_LMS_URL = "https://lms.vit.ac.in/login/index.php";
 /**
  * Logs into the VIT LMS using Playwright, finds course links, and scrapes assignments.
  */
+export interface ScrapedRecord {
+  userId: string | number;
+  courseId: number;
+  content: string;
+}
+
 export interface ScrapeResult {
-  context: string;
+  userId: string | number;
+  allowlist: number[];
+  records: ScrapedRecord[];
   assignments: Assignment[];
 }
 
 export interface Assignment {
+  userId: string | number;
+  courseId: number;
   courseName: string;
   title: string;
   deadlineString: string;
@@ -22,7 +32,7 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
   const browser: Browser = await chromium.launch({ headless: true });
   const page: Page = await browser.newPage();
   
-  let output = "";
+  const records: ScrapedRecord[] = [];
   const assignmentsToSave: Assignment[] = [];
 
   try {
@@ -46,12 +56,29 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
     }
 
     const title = await page.title();
-    output += `Successfully logged in. Dashboard Title: ${title}\n\n`;
     console.log(`Logged in. Title: ${title}`);
 
     if (!page.url().includes('/my/')) {
-       await page.waitForTimeout(2000);
+       await page.goto(new URL('/my/', lmsUrl).toString(), { waitUntil: "domcontentloaded" });
     }
+
+    // Extract user ID using Moodle's global config or profile links
+    const userId = await page.evaluate(() => {
+      // @ts-ignore
+      if (typeof window.M !== 'undefined' && window.M.cfg && window.M.cfg.userid) {
+        // @ts-ignore
+        return window.M.cfg.userid;
+      }
+      const profileLink = document.querySelector('a[href*="user/profile.php?id="], a[href*="user/view.php?id="]');
+      if (profileLink) {
+        const url = new URL((profileLink as HTMLAnchorElement).href);
+        const id = url.searchParams.get('id');
+        if (id) return id;
+      }
+      return 'unknown_user';
+    });
+
+    console.log(`Extracted userId: ${userId}`);
 
     // Moodle dashboard (block_myoverview) often loads courses asynchronously via AJAX.
     // Wait for a few seconds to ensure they have rendered.
@@ -79,30 +106,46 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
       throw new Error("Unable to select the LMS In progress course filter. Refusing to scrape archived courses.");
     }
 
-    // Try to find course links
+    // Try to find course links strictly within myoverview or frontpage-course-list
     console.log("Finding visible in-progress courses...");
-    const courseLinks = await page.$$eval('[data-region="courses-view"] a[href*="course/view.php?id="], #block-region-content a[href*="course/view.php?id="]', links =>
+    const courseLinks = await page.$$eval('.block_myoverview a[href*="course/view.php?id="], #frontpage-course-list a[href*="course/view.php?id="], [data-region="courses-view"] a[href*="course/view.php?id="]', links =>
       links.map(a => {
         const el = a as HTMLElement;
         const text = el.innerText.trim() || el.textContent?.trim() || el.getAttribute('title') || '';
+        const href = (a as HTMLAnchorElement).href;
+
+        let courseId = -1;
+        try {
+          const url = new URL(href);
+          const idParam = url.searchParams.get('id');
+          if (idParam) courseId = parseInt(idParam, 10);
+        } catch (e) {}
+
         const card = el.closest('[data-courseid], .card, .coursebox');
         const visible = !!(card || el).getClientRects().length && getComputedStyle(card || el).visibility !== 'hidden';
-        return { text, href: (a as HTMLAnchorElement).href, visible };
-      }).filter(link => link.text.length > 0 && link.visible)
+        return { text, href, visible, courseId };
+      }).filter(link => link.text.length > 0 && link.visible && !isNaN(link.courseId) && link.courseId > 0)
     );
 
     const uniqueCourses = courseLinks.filter((v,i,a)=>a.findIndex(t=>(t.href === v.href && t.text === v.text))===i);
 
     if (uniqueCourses.length === 0) {
-      output += "No courses found on the dashboard. The selectors might need adjustment based on VIT's specific theme.\n";
-      return { context: output, assignments: assignmentsToSave };
+      records.push({ userId, courseId: 0, content: "No courses found on the dashboard. The selectors might need adjustment based on VIT's specific theme.\n" });
+      return { userId, allowlist: [], records, assignments: assignmentsToSave };
     }
 
-    output += `Found ${uniqueCourses.length} courses.\n\n`;
+    const allowlist = uniqueCourses.map(c => c.courseId);
+    records.push({ userId, courseId: 0, content: `Found ${uniqueCourses.length} courses.\n\n` });
 
     // Go into each course and look for assignments
     for (const course of uniqueCourses) {
-      output += `Active course: ${course.text}\n`;
+      // Allowlist Enforcement: only process courses in the allowlist
+      if (!allowlist.includes(course.courseId)) {
+        console.log(`Course ${course.text} (${course.courseId}) is not in allowlist. Skipping.`);
+        continue;
+      }
+
+      let courseOutput = `Active course: ${course.text}\n`;
       console.log(`Visiting course: ${course.text}`);
       
       try {
@@ -174,11 +217,13 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
 
             const deadlineDate = parseMoodleDate(deadline);
             if (isAssignmentOpen && deadlineDate && isUpcoming(deadlineDate)) {
-              if (upcomingAssignmentCount === 0) output += `Upcoming assignments:\n`;
-              output += `  - ${a.text}\n`;
-              output += `    Due: ${deadline}\n`;
+              if (upcomingAssignmentCount === 0) courseOutput += `Upcoming assignments:\n`;
+              courseOutput += `  - ${a.text}\n`;
+              courseOutput += `    Due: ${deadline}\n`;
               upcomingAssignmentCount++;
               assignmentsToSave.push({
+                userId,
+                courseId: course.courseId,
                 courseName: course.text,
                 title: a.text,
                 deadlineString: deadline,
@@ -189,17 +234,23 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
               console.log(`Ignoring closed assignment or assignment without a future due date: ${a.text}`);
             }
           }
-          if (upcomingAssignmentCount === 0) output += `  - No open assignments with a future due date.\n`;
+          if (upcomingAssignmentCount === 0) courseOutput += `  - No open assignments with a future due date.\n`;
         } else {
-          output += `  - No explicit assignments found on the main course page.\n`;
+          courseOutput += `  - No explicit assignments found on the main course page.\n`;
         }
       } catch (err) {
-        output += `  - Failed to load course page.\n`;
+        courseOutput += `  - Failed to load course page.\n`;
       }
-      output += `\n`;
+      courseOutput += `\n`;
+
+      records.push({
+        userId,
+        courseId: course.courseId,
+        content: courseOutput
+      });
     }
 
-    return { context: output, assignments: assignmentsToSave };
+    return { userId, allowlist, records, assignments: assignmentsToSave };
   } catch (err) {
     console.error("Scraping error:", err);
     throw err;
