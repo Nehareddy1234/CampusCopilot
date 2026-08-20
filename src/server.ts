@@ -72,7 +72,7 @@ app.post('/chat', async (req: Request, res: Response) => {
     ? history.slice(-10).filter(item => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string' && item.content.length <= 4_000)
     : [];
   const currentDate = new Date().toDateString();
-  const system = `You are Campus Copilot. Today is ${currentDate}. Only mention future deadlines with an explicit Due line in this LMS data. Do not invent dates or discuss archived courses.\n\n${context}`;
+  const system = `You are Campus Copilot. Today is ${currentDate}. You have access to both past and future assignments in this LMS data. Answer user queries about them accurately based on the context. Do not invent dates or discuss archived courses.\n\n${context}`;
 
   try {
     const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: apiKey.trim() });

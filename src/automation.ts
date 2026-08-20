@@ -58,8 +58,8 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
     const title = await page.title();
     console.log(`Logged in. Title: ${title}`);
 
-    if (!page.url().includes('/my/')) {
-       await page.goto(new URL('/my/', lmsUrl).toString(), { waitUntil: "domcontentloaded" });
+    if (!page.url().includes('/my/courses.php')) {
+       await page.goto(new URL('/my/courses.php', lmsUrl).toString(), { waitUntil: "domcontentloaded" });
     }
 
     // Extract user ID using Moodle's global config or profile links
@@ -84,34 +84,26 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
     // Wait for a few seconds to ensure they have rendered.
     await page.waitForTimeout(5000);
 
-    // The dashboard includes archived cards by default. We require the explicit
-    // In progress filter instead of silently scraping every visible course.
-    try {
-      const dropdown = await page.$('button[data-action="course-filter"], button[data-toggle="dropdown"]');
-      if (dropdown) {
-         await dropdown.click();
-         await page.waitForTimeout(1000);
-         const inProgressOption = await page.$('[data-filter="inprogress"], [data-value="inprogress"], [data-action="filter"][data-filter="inprogress"], a:has-text("In progress")');
-         if (inProgressOption) {
-           await inProgressOption.click();
-           console.log("Selected 'In progress' filter.");
-           await page.waitForTimeout(1500);
-         } else {
-           throw new Error("The dashboard did not expose an In progress filter.");
-         }
-      } else {
-        throw new Error("The dashboard course filter was not found.");
+    // Scroll to the bottom to load all paginated course cards
+    console.log("Scrolling to load all courses...");
+    let previousCount = 0;
+    while (true) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1000);
+      const currentCount = await page.locator('.coursename, .multiline').count();
+      if (currentCount === previousCount) {
+        break;
       }
-    } catch (e) {
-      throw new Error("Unable to select the LMS In progress course filter. Refusing to scrape archived courses.");
+      previousCount = currentCount;
     }
 
     // Try to find course links strictly within myoverview or frontpage-course-list
-    console.log("Finding visible in-progress courses...");
+    console.log("Finding visible courses...");
     const courseLinks = await page.$$eval('.block_myoverview a[href*="course/view.php?id="], #frontpage-course-list a[href*="course/view.php?id="], [data-region="courses-view"] a[href*="course/view.php?id="]', links =>
       links.map(a => {
         const el = a as HTMLElement;
-        const text = el.innerText.trim() || el.textContent?.trim() || el.getAttribute('title') || '';
+        const courseNameEl = el.querySelector('.coursename, .multiline');
+        const text = courseNameEl ? (courseNameEl as HTMLElement).innerText.trim() : el.innerText.trim() || el.textContent?.trim() || el.getAttribute('title') || '';
         const href = (a as HTMLAnchorElement).href;
 
         let courseId = -1;
@@ -121,10 +113,8 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
           if (idParam) courseId = parseInt(idParam, 10);
         } catch (e) {}
 
-        const card = el.closest('[data-courseid], .card, .coursebox');
-        const visible = !!(card || el).getClientRects().length && getComputedStyle(card || el).visibility !== 'hidden';
-        return { text, href, visible, courseId };
-      }).filter(link => link.text.length > 0 && link.visible && !isNaN(link.courseId) && link.courseId > 0)
+        return { text, href, courseId };
+      }).filter(link => link.text.length > 0 && !isNaN(link.courseId) && link.courseId > 0)
     );
 
     const uniqueCourses = courseLinks.filter((v,i,a)=>a.findIndex(t=>(t.href === v.href && t.text === v.text))===i);
@@ -161,7 +151,7 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
 
         if (assignmentLinks.length > 0) {
           const uniqueAssignments = assignmentLinks.filter((v,i,a)=>a.findIndex(t=>(t.href === v.href))===i);
-          let upcomingAssignmentCount = 0;
+          let assignmentCount = 0;
           for (const a of uniqueAssignments) {
             // Navigate to assignment page to extract actual deadline
             let deadline = "Unknown deadline";
@@ -216,11 +206,11 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
             }
 
             const deadlineDate = parseMoodleDate(deadline);
-            if (isAssignmentOpen && deadlineDate && isUpcoming(deadlineDate)) {
-              if (upcomingAssignmentCount === 0) courseOutput += `Upcoming assignments:\n`;
+            if (deadlineDate) {
+              if (assignmentCount === 0) courseOutput += `Assignments:\n`;
               courseOutput += `  - ${a.text}\n`;
               courseOutput += `    Due: ${deadline}\n`;
-              upcomingAssignmentCount++;
+              assignmentCount++;
               assignmentsToSave.push({
                 userId,
                 courseId: course.courseId,
@@ -230,11 +220,9 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
                 // ISO preserves the exact LMS date and time for reminder calculations.
                 deadlineISO: deadlineDate.toISOString()
               });
-            } else {
-              console.log(`Ignoring closed assignment or assignment without a future due date: ${a.text}`);
             }
           }
-          if (upcomingAssignmentCount === 0) courseOutput += `  - No open assignments with a future due date.\n`;
+          if (assignmentCount === 0) courseOutput += `  - No assignments found with a due date.\n`;
         } else {
           courseOutput += `  - No explicit assignments found on the main course page.\n`;
         }
