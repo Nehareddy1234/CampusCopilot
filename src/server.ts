@@ -1,10 +1,12 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
+import cors from 'cors';
 import OpenAI from 'openai';
 import { loginToLMS } from './automation';
 import { generateDailyDigest } from './ai';
 
 const app = express();
+app.use(cors());
 const PORT = Number(process.env.PORT || 3000);
 const MAX_BODY_SIZE = '250kb';
 const requestTimes = new Map<string, number[]>();
