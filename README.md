@@ -1,83 +1,39 @@
-﻿# Campus Copilot
+# Campus Copilot (React + Firebase Architecture)
 
-Campus Copilot is a local web app for VIT LMS students. It signs in to the LMS, uses browser automation to collect active courses and upcoming assignment deadlines, then provides an AI-generated daily digest, a course chat assistant, and deadline reminders.
+Campus Copilot is a local web app for VIT LMS students. It uses a React frontend and a Firebase serverless backend to manage sessions, crawl the LMS for upcoming assignments, and send smart reminders.
 
-## What it uses
+## Architecture
 
-- **Node.js + TypeScript** for the application
-- **Express** to serve the web interface and API
-- **Playwright** to sign in to VIT LMS and scrape course/assignment data
-- **OpenRouter / OpenAI SDK** (`openai/gpt-4o-mini`) for daily digests and chat
-- **node-cron** for daily deadline checks and reminders
-- **marked** to render AI-generated Markdown in the browser
-- Browser `localStorage` to store the user's API key, scraped assignment data, reminders, and chat history
-
-The scraper deliberately selects the LMS **In progress** course filter and retains only assignments with a verified future deadline.
-
-## Prerequisites
-
-- Node.js 18 or later
-- Playwright Chromium browser files
+- **Frontend:** React + Vite, Firebase Auth, Firestore
+- **Backend:** Firebase Cloud Functions (Gen 2 / Cloud Run)
+- **Scraping:** Playwright
 
 ## Setup
 
-1. Install dependencies:
-
-   ```bash
+1. **Install Frontend Dependencies:**
    npm install
-   ```
 
-2. Install the Playwright browser used for LMS automation:
+2. **Setup Environment Variables:**
+   Create a .env file in the root directory and add your Firebase configuration:
+   VITE_FIREBASE_API_KEY=your-api-key
+   VITE_FIREBASE_AUTH_DOMAIN=your-auth-domain
+   VITE_FIREBASE_PROJECT_ID=your-project-id
+   VITE_FIREBASE_STORAGE_BUCKET=your-storage-bucket
+   VITE_FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
+   VITE_FIREBASE_APP_ID=your-app-id
+   VITE_ENCRYPTION_SECRET=your-secure-secret
 
-   ```bash
-   npx playwright install chromium
-   ```
+3. **Backend Setup:**
+   cd functions
+   npm install
 
-3. Start the app and enter your own OpenRouter API key in the login screen. No server-side API key or external database is required.
+## Local Development
 
-## Run locally
+Run the frontend locally using the dev script.
 
-For development:
+## Deployment Notes (Cloud Run)
 
-```bash
-npm run dev
-```
+Standard Firebase Cloud Functions do not have the OS-level dependencies required to run Playwright (headless Chromium).
+To deploy the scraper backend successfully, you must deploy the functions directory as a Docker Container to Google Cloud Run.
 
-Or build and run the compiled app:
-
-```bash
-npm run build
-npm start
-```
-
-On Windows systems where PowerShell blocks `npm.ps1`, use `npm.cmd` instead:
-
-```powershell
-npm.cmd run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000), enter your VIT LMS credentials, and wait for the dashboard digest to load.
-
-## How it works
-
-1. The app logs into VIT LMS through Playwright.
-2. It applies Moodle's **In progress** course filter.
-3. It visits those courses and reads assignment due dates from Moodle's submission-status table.
-4. Only assignments with future, parseable due dates are returned to the browser.
-5. The browser stores the course data locally and uses it for the digest, chat, and on-screen reminders.
-
-## Privacy and security
-
-- LMS credentials are used only for the current login request and are not stored by the app.
-- Your API key is stored in this browser's local storage at your request and is sent only to the local Campus Copilot server to make OpenRouter requests. Do not use a shared computer.
-- Use **Clear local data** in the app to remove the saved API key, assignments, reminders, and chat history.
-- Local reminders are displayed while the app is open. Browser local storage cannot deliver background notifications after the browser is closed.
-- The server applies request-size validation, request throttling, and never writes user course data or API keys to disk.
-
-## Scripts
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Run the TypeScript server directly for development. |
-| `npm run build` | Compile TypeScript into `dist/`. |
-| `npm start` | Run the compiled server. |
+A Dockerfile is provided in the functions/ directory using the official Playwright base image.
