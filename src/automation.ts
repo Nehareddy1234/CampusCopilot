@@ -212,8 +212,8 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
         if (assignmentLinks.length > 0) {
           const uniqueAssignments = assignmentLinks.filter((v,i,a)=>a.findIndex(t=>(t.href === v.href))===i);
           let upcomingAssignmentCount = 0;
-          for (const a of uniqueAssignments) {
-            // Navigate to assignment page to extract actual deadline
+
+          const processAssignment = async (a: {text: string, href: string}) => {
             let deadline = "Unknown deadline";
             let isAssignmentOpen = false;
             let extractedSubmissionStatus = '';
@@ -266,28 +266,37 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
             } catch (e) {
               console.error(`Failed to get deadline for assignment: ${a.text}`, e);
             }
+            return { a, deadline, isAssignmentOpen, extractedSubmissionStatus };
+          };
 
-            const deadlineDate = parseMoodleDate(deadline);
-            if (deadlineDate) {
-              if (upcomingAssignmentCount === 0) courseOutput += `Assignments:\n`;
-              courseOutput += `  - ${a.text}\n`;
-              courseOutput += `    Due: ${deadline}\n`;
-              if (extractedSubmissionStatus) {
-                courseOutput += `    Status: ${extractedSubmissionStatus}\n`;
+          const CONCURRENCY_LIMIT = 3;
+          for (let i = 0; i < uniqueAssignments.length; i += CONCURRENCY_LIMIT) {
+            const chunk = uniqueAssignments.slice(i, i + CONCURRENCY_LIMIT);
+            const results = await Promise.all(chunk.map(processAssignment));
+
+            for (const { a, deadline, isAssignmentOpen, extractedSubmissionStatus } of results) {
+              const deadlineDate = parseMoodleDate(deadline);
+              if (deadlineDate) {
+                if (upcomingAssignmentCount === 0) courseOutput += `Assignments:\n`;
+                courseOutput += `  - ${a.text}\n`;
+                courseOutput += `    Due: ${deadline}\n`;
+                if (extractedSubmissionStatus) {
+                  courseOutput += `    Status: ${extractedSubmissionStatus}\n`;
+                }
+                upcomingAssignmentCount++;
+                assignmentsToSave.push({
+                  userId,
+                  courseId: course.courseId,
+                  courseName: course.text,
+                  title: a.text,
+                  deadlineString: deadline,
+                  // ISO preserves the exact LMS date and time for reminder calculations.
+                  deadlineISO: deadlineDate.toISOString(),
+                  submissionStatus: extractedSubmissionStatus
+                });
+              } else {
+                console.log(`Ignoring assignment without a parseable due date: ${a.text}`);
               }
-              upcomingAssignmentCount++;
-              assignmentsToSave.push({
-                userId,
-                courseId: course.courseId,
-                courseName: course.text,
-                title: a.text,
-                deadlineString: deadline,
-                // ISO preserves the exact LMS date and time for reminder calculations.
-                deadlineISO: deadlineDate.toISOString(),
-                submissionStatus: extractedSubmissionStatus
-              });
-            } else {
-              console.log(`Ignoring assignment without a parseable due date: ${a.text}`);
             }
           }
           if (upcomingAssignmentCount === 0) courseOutput += `  - No explicit assignments with a valid due date found.\n`;
