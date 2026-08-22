@@ -12,11 +12,18 @@ export interface ScrapedRecord {
   content: string;
 }
 
+export interface CourseData {
+  courseId: number;
+  name: string;
+  faculty: string;
+}
+
 export interface ScrapeResult {
   userId: string | number;
   allowlist: number[];
   records: ScrapedRecord[];
   assignments: Assignment[];
+  courses: CourseData[];
 }
 
 export interface Assignment {
@@ -150,8 +157,23 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
         } catch (e) {}
 
         const card = el.closest('[data-courseid], .card, .coursebox, .course-region');
+
+        let faculty = "Unknown Faculty";
+        if (card) {
+           const infoEls = Array.from(card.querySelectorAll('.text-muted, .teachers, .contact, .info, .categoryname, div p'));
+           for (const info of infoEls) {
+              const textContent = (info.textContent || '').trim();
+              if (textContent && textContent.length > 3 && textContent !== text) {
+                 if (/(teacher|instructor|faculty|prof\.|dr\.)/i.test(textContent) || textContent.split(/\s+/).length <= 4) {
+                     faculty = textContent.replace(/(teacher|instructor|faculty):\s*/i, '').trim();
+                     break;
+                 }
+              }
+           }
+        }
+
         const visible = !!(card || el).getClientRects().length && getComputedStyle(card || el).visibility !== 'hidden';
-        return { text, href, visible, courseId };
+        return { text, href, visible, courseId, faculty };
       }).filter(link => link.text.length > 0 && link.visible && !isNaN(link.courseId) && link.courseId > 0)
     );
 
@@ -159,7 +181,7 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
 
     if (uniqueCourses.length === 0) {
       records.push({ userId, courseId: 0, content: "No courses found on the dashboard. The selectors might need adjustment based on VIT's specific theme.\n" });
-      return { userId, allowlist: [], records, assignments: assignmentsToSave };
+      return { userId, allowlist: [], records, assignments: assignmentsToSave, courses: [] };
     }
 
     const allowlist = uniqueCourses.map(c => c.courseId);
@@ -284,7 +306,13 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
       });
     }
 
-    return { userId, allowlist, records, assignments: assignmentsToSave };
+    const finalCourses: CourseData[] = uniqueCourses.map(c => ({
+      courseId: c.courseId,
+      name: c.text,
+      faculty: c.faculty
+    }));
+
+    return { userId, allowlist, records, assignments: assignmentsToSave, courses: finalCourses };
   } catch (err) {
     console.error("Scraping error:", err);
     throw err;

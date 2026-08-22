@@ -4,30 +4,28 @@
   "description": "Automation and chatbot for VIT LMS",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc && vite build",
-    "dev": "vite",
-    "start": "vite preview",
+    "build": "tsc",
+    "dev": "ts-node src/server.ts",
+    "start": "node dist/server.js",
     "test": "echo \"No tests yet\""
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@types/crypto-js": "^4.2.2",
-    "crypto-js": "^4.2.0",
+    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "firebase": "^12.18.0",
+    "express": "^4.22.2",
     "marked": "^18.0.4",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.2"
+    "node-cron": "^4.6.0",
+    "openai": "^4.104.0",
+    "playwright": "^1.62.1"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
     "@types/node": "^22.5.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "@vitejs/plugin-react": "^6.1.0",
+    "@types/node-cron": "^3.0.11",
     "ts-node": "^10.9.2",
-    "typescript": "^5.5.2",
-    "vite": "^8.2.2"
+    "typescript": "^5.5.2"
   }
 }
