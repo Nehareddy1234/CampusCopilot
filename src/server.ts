@@ -12,8 +12,15 @@ const MAX_BODY_SIZE = '250kb';
 const requestTimes = new Map<string, number[]>();
 
 app.disable('x-powered-by');
+
+// Serve the static frontend
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(express.json({ limit: MAX_BODY_SIZE }));
+
+// Required to serve index.html directly when hitting the root URL if static routing fails
+app.get('/', (req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
 
 function validApiKey(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length >= 16 && value.length <= 500;
