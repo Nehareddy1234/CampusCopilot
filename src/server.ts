@@ -19,7 +19,7 @@ app.use(express.json({ limit: MAX_BODY_SIZE }));
 
 // Required to serve index.html directly when hitting the root URL if static routing fails
 app.get('/', (req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, '..', 'index.html'));
 });
 
 function validApiKey(value: unknown): value is string {
