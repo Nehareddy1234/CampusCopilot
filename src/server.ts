@@ -17,6 +17,14 @@ app.disable('x-powered-by');
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(express.json({ limit: MAX_BODY_SIZE }));
 
+// Handle JSON parsing errors specifically
+app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
+    if (err instanceof SyntaxError && 'body' in err) {
+        return res.status(400).json({ error: 'Invalid JSON payload' });
+    }
+    next(err);
+});
+
 // Required to serve index.html directly when hitting the root URL if static routing fails
 app.get('/', (req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
@@ -117,6 +125,21 @@ ${context}`;
     console.error('Chat request failed:', (error as Error).message);
     res.status(502).json({ error: 'The AI provider rejected the request. Check your API key and balance.' });
   }
+});
+
+// Handle 404 for non-existent API routes or fallback to index.html for frontend routing
+app.use((req: Request, res: Response) => {
+  if (req.method === 'POST' || req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'Endpoint not found' });
+  } else {
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  }
+});
+
+// Global error handler for unhandled exceptions to return JSON
+app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, () => console.log(`Campus Copilot is running at http://localhost:${PORT}`));
