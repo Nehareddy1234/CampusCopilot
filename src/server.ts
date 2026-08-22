@@ -2,8 +2,11 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import cors from 'cors';
 import OpenAI from 'openai';
+import dotenv from 'dotenv';
 import { loginToLMS } from './automation';
 import { generateDailyDigest } from './ai';
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -30,9 +33,7 @@ app.get('/', (req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, '..', 'index.html'));
 });
 
-function validApiKey(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length >= 16 && value.length <= 500;
-}
+const SERVER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 
 function allowRequest(req: Request, res: Response): boolean {
   const key = req.ip || 'local';
@@ -49,22 +50,22 @@ function allowRequest(req: Request, res: Response): boolean {
 
 app.post('/login', async (req: Request, res: Response) => {
   if (!allowRequest(req, res)) return;
-  const { username, password, apiKey, lmsUrl } = req.body || {};
+  const { username, password, lmsUrl } = req.body || {};
   let validatedLmsUrl: URL;
   try {
     validatedLmsUrl = new URL(typeof lmsUrl === 'string' && lmsUrl ? lmsUrl : 'https://lms.vit.ac.in/login/index.php');
   } catch {
     return res.status(400).json({ error: 'Enter a valid LMS website address.' });
   }
-  if (validatedLmsUrl.protocol !== 'https:' || typeof username !== 'string' || typeof password !== 'string' || !validApiKey(apiKey)) {
-    return res.status(400).json({ error: 'A secure LMS URL, LMS credentials, and a valid OpenRouter API key are required.' });
+  if (validatedLmsUrl.protocol !== 'https:' || typeof username !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ error: 'A secure LMS URL and LMS credentials are required.' });
   }
 
   try {
     const result = await loginToLMS(username.trim(), password, validatedLmsUrl.toString());
     const filteredRecords = result.records.filter(r => r.userId === result.userId);
     const digestContext = JSON.stringify(filteredRecords);
-    const digest = await generateDailyDigest(digestContext, apiKey.trim());
+    const digest = await generateDailyDigest(digestContext, SERVER_API_KEY);
     // Do not retain credentials, API keys, assignments, or chat state on the server.
     res.json({ success: true, digest, records: result.records, userId: result.userId, allowlist: result.allowlist, assignments: result.assignments, courses: result.courses });
   } catch (error) {
@@ -76,8 +77,8 @@ app.post('/login', async (req: Request, res: Response) => {
 
 app.post('/chat', async (req: Request, res: Response) => {
   if (!allowRequest(req, res)) return;
-  const { message, apiKey, records, userId, history = [] } = req.body || {};
-  if (typeof message !== 'string' || !message.trim() || message.length > 2_000 || !validApiKey(apiKey) || !Array.isArray(records) || userId === undefined) {
+  const { message, records, userId, history = [] } = req.body || {};
+  if (typeof message !== 'string' || !message.trim() || message.length > 2_000 || !Array.isArray(records) || userId === undefined) {
     return res.status(400).json({ error: 'Invalid chat request.' });
   }
 
@@ -115,7 +116,7 @@ Context:
 ${context}`;
 
   try {
-    const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: apiKey.trim() });
+    const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: SERVER_API_KEY });
     const response = await client.chat.completions.create({
       model: 'openai/gpt-4o-mini',
       messages: [{ role: 'system', content: system }, ...safeHistory, { role: 'user', content: message.trim() }]
