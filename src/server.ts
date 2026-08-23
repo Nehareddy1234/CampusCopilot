@@ -17,7 +17,7 @@ const requestTimes = new Map<string, number[]>();
 app.disable('x-powered-by');
 
 // Serve the static frontend
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(path.join(__dirname, '..', 'docs')));
 app.use(express.json({ limit: MAX_BODY_SIZE }));
 
 // Handle JSON parsing errors specifically
@@ -30,7 +30,7 @@ app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
 
 // Required to serve index.html directly when hitting the root URL if static routing fails
 app.get('/', (req: Request, res: Response) => {
-    res.sendFile(path.join(__dirname, '..', 'index.html'));
+    res.sendFile(path.join(__dirname, '..', 'docs', 'index.html'));
 });
 
 const SERVER_API_KEY = process.env.OPENROUTER_API_KEY || '';
@@ -133,7 +133,7 @@ app.use((req: Request, res: Response) => {
   if (req.method === 'POST' || req.path.startsWith('/api/')) {
     res.status(404).json({ error: 'Endpoint not found' });
   } else {
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, '..', 'docs', 'index.html'));
   }
 });
 
