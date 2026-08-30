@@ -3,7 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const playwright_1 = require("playwright");
 async function run() {
     const browser = await playwright_1.chromium.launch({ headless: true });
-    const page = await browser.newPage();
+    const context = await browser.newContext();
+    const page = await context.newPage();
     try {
         await page.goto('https://lms.vit.ac.in/login/index.php');
         console.log(await page.title());

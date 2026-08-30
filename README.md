@@ -1,4 +1,4 @@
-﻿# Campus Copilot
+# Campus Copilot
 
 Campus Copilot is a local web app for VIT LMS students. It signs in to the LMS, uses browser automation to collect active courses and upcoming assignment deadlines, then provides an AI-generated daily digest, a course chat assistant, and deadline reminders.
 
@@ -37,11 +37,13 @@ The scraper deliberately selects the LMS **In progress** course filter and retai
 
 ## Run locally
 
-For development:
+For development (recommended — starts both the main app and the scraper microservice concurrently):
 
 ```bash
-npm run dev
+npm run dev:all
 ```
+
+> **Note:** Running `npm run dev` alone only starts the main Express application. Without the scraper microservice running simultaneously on port 10000, login requests will fail with a 502 Bad Gateway / ECONNREFUSED error.
 
 Or build and run the compiled app:
 
@@ -53,7 +55,7 @@ npm start
 On Windows systems where PowerShell blocks `npm.ps1`, use `npm.cmd` instead:
 
 ```powershell
-npm.cmd run dev
+npm.cmd run dev:all
 ```
 
 Open [http://localhost:3000](http://localhost:3000), enter your VIT LMS credentials, and wait for the dashboard digest to load.
@@ -78,6 +80,7 @@ Open [http://localhost:3000](http://localhost:3000), enter your VIT LMS credenti
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Run the TypeScript server directly for development. |
+| `npm run dev:all` | **Recommended:** Run both the main Express app and scraper microservice concurrently. |
+| `npm run dev` | Run the main TypeScript server alone (login will fail without the scraper running). |
 | `npm run build` | Compile TypeScript into `dist/`. |
 | `npm start` | Run the compiled server. |

@@ -14,7 +14,7 @@ async function benchmark() {
   for (const a of uniqueAssignments) {
     let deadline = "Unknown deadline";
     try {
-      const assignPage = await browser.newPage();
+      const assignPage = await context.newPage();
       await assignPage.goto(a.href, { waitUntil: "networkidle" });
       await assignPage.waitForSelector('table, [data-region="assignment-info"], .submissionstatustable', { timeout: 1000 }).catch(() => undefined);
 
