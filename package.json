@@ -7,8 +7,9 @@
     "build": "tsc",
     "dev": "ts-node src/server.ts",
     "dev:all": "concurrently -n MAIN,SCRAPER -c blue,magenta \"npm run dev\" \"npm run dev --prefix scraper-service\"",
+    "monitor": "ts-node src/monitor.ts",
     "start": "node dist/server.js",
-    "test": "echo \"No tests yet\""
+    "test": "tsc && node test_notify.js"
   },
   "author": "",
   "license": "MIT",

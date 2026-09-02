@@ -6,6 +6,7 @@ WORKDIR /app
 # Install package dependencies first for Docker caching
 COPY package*.json ./
 RUN npm ci
+RUN npx playwright install chromium --with-deps
 
 # Copy TypeScript configs and source code
 COPY tsconfig.json ./
