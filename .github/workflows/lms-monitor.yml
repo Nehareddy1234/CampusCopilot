@@ -32,13 +32,3 @@ jobs:
           GOOGLE_CHAT_WEBHOOK_URL: ${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}
           DEADLINE_WARN_HOURS: 24
 
-      - name: Persist alert state
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update LMS monitor state"
-            git pull --rebase origin main
-            git push origin main
-          fi
