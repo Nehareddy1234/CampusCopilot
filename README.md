@@ -1,86 +1,87 @@
-# Campus Copilot
+# Campus Copilot — LMS Scraper Microservice ??
 
-Campus Copilot is a local web app for VIT LMS students. It signs in to the LMS, uses browser automation to collect active courses and upcoming assignment deadlines, then provides an AI-generated daily digest, a course chat assistant, and deadline reminders.
+A high-performance, headless Chromium scraping microservice powered by **Playwright** and **Express.js**, designed to interface with the VIT Student LMS portal.
 
-## What it uses
+This repository serves as the remote scraping engine for **[Campus Notifier](https://github.com/Nehareddy1234/campus-notifier)**.
 
-- **Node.js + TypeScript** for the application
-- **Express** to serve the web interface and API
-- **Playwright** to sign in to VIT LMS and scrape course/assignment data
-- **OpenRouter / OpenAI SDK** (`openai/gpt-4o-mini`) for daily digests and chat
-- **node-cron** for daily deadline checks and reminders
-- **marked** to render AI-generated Markdown in the browser
-- Browser `localStorage` to store the user's API key, scraped assignment data, reminders, and chat history
+---
 
-The scraper deliberately selects the LMS **In progress** course filter and retains only assignments with a verified future deadline.
+## ??? Architecture
 
-## Prerequisites
+```
++---------------------------------+
+¦     campus-notifier (Brain)     ¦
+¦  - Supabase Database            ¦
+¦  - Multi-user Cron Scheduler    ¦
+¦  - Email Alert Dispatch (SMTP)  ¦
++---------------------------------+
+                 ¦ POST /scrape
+                 ?
++---------------------------------+
+¦  campus-copilot (Scraper Worker)¦
+¦  - Express.js Microservice      ¦
+¦  - Playwright Headless Chromium ¦
+¦  - Deployed on Render           ¦
++---------------------------------+
+                 ¦ HTTPS Login & Scraping
+                 ?
++---------------------------------+
+¦       VIT LMS Portal            ¦
++---------------------------------+
+```
 
-- Node.js 18 or later
-- Playwright Chromium browser files
+---
 
-## Setup
+## ?? Features
 
-1. Install dependencies:
+- **Headless Browser Automation**: Navigates VIT LMS, authenticates, and extracts enrolled courses and assignments.
+- **Microservice API**: Exposes lightweight endpoints for health checks and scraping tasks.
+- **Security & Authorization**: Protected with internal API key authentication (`INTERNAL_API_KEY`).
+- **Render Ready**: Optimized for zero-cost hosting on Render Web Services with health check endpoints.
 
-   ```bash
-   npm install
-   ```
+---
 
-2. Install the Playwright browser used for LMS automation:
+## ??? API Endpoints
 
-   ```bash
-   npx playwright install chromium
-   ```
+### 1. Health Check
+`GET /health`
+- Returns `200 OK` when the service is active and responsive.
+- Used by GitHub Actions workflows and monitors to warm up the service.
 
-3. Start the app and enter your own OpenRouter API key in the login screen. No server-side API key or external database is required.
+### 2. Scrape LMS Data
+`POST /scrape`
+- **Headers:**
+  - `x-internal-api-key`: `<INTERNAL_API_KEY>`
+  - `Content-Type`: `application/json`
+- **Body:**
+  ```json
+  {
+    "username": "STUDENT_REG_NO",
+    "password": "STUDENT_LMS_PASSWORD"
+  }
+  ```
+- **Response:**
+  ```json
+  {
+    "courses": [...],
+    "assignments": [...]
+  }
+  ```
 
-## Run locally
+---
 
-For development (recommended â€” starts both the main app and the scraper microservice concurrently):
+## ?? Local Development
 
 ```bash
-npm run dev:all
+cd scraper-service
+npm install
+npm run dev
 ```
 
-> **Note:** Running `npm run dev` alone only starts the main Express application. Without the scraper microservice running simultaneously on port 10000, login requests will fail with a 502 Bad Gateway / ECONNREFUSED error.
+Server starts on `http://localhost:10000`.
 
-Or build and run the compiled app:
+---
 
-```bash
-npm run build
-npm start
-```
+## ?? Related Repositories
 
-On Windows systems where PowerShell blocks `npm.ps1`, use `npm.cmd` instead:
-
-```powershell
-npm.cmd run dev:all
-```
-
-Open [http://localhost:3000](http://localhost:3000), enter your VIT LMS credentials, and wait for the dashboard digest to load.
-
-## How it works
-
-1. The app logs into VIT LMS through Playwright.
-2. It applies Moodle's **In progress** course filter.
-3. It visits those courses and reads assignment due dates from Moodle's submission-status table.
-4. Only assignments with future, parseable due dates are returned to the browser.
-5. The browser stores the course data locally and uses it for the digest, chat, and on-screen reminders.
-
-## Privacy and security
-
-- LMS credentials are used only for the current login request and are not stored by the app.
-- Your API key is stored in this browser's local storage at your request and is sent only to the local Campus Copilot server to make OpenRouter requests. Do not use a shared computer.
-- Use **Clear local data** in the app to remove the saved API key, assignments, reminders, and chat history.
-- Local reminders are displayed while the app is open. Browser local storage cannot deliver background notifications after the browser is closed.
-- The server applies request-size validation, request throttling, and never writes user course data or API keys to disk.
-
-## Scripts
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev:all` | **Recommended:** Run both the main Express app and scraper microservice concurrently. |
-| `npm run dev` | Run the main TypeScript server alone (login will fail without the scraper running). |
-| `npm run build` | Compile TypeScript into `dist/`. |
-| `npm start` | Run the compiled server. |
+- **[campus-notifier](https://github.com/Nehareddy1234/campus-notifier)**: Main multi-user notification system, signup portal, and cron dispatcher.
