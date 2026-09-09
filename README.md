@@ -4,16 +4,22 @@ A high-performance, headless Chromium scraping microservice powered by **Playwri
 
 This repository serves as the remote scraping engine for **[Campus Notifier](https://github.com/Nehareddy1234/campus-notifier)**.
 
+---
+
+## 🌐 Live Deployments & Endpoints
+
+- **Student Registration Web Portal**: [`https://campus-notifier-portal.onrender.com`](https://campus-notifier-portal.onrender.com) *(Self-service student signup with live credential validation)*
 - **Live Render Scraper Endpoint**: [`https://campus-copilot-scraper.onrender.com`](https://campus-copilot-scraper.onrender.com)
-- **Health Check**: [`https://campus-copilot-scraper.onrender.com/health`](https://campus-copilot-scraper.onrender.com/health)
+- **Scraper Health Check**: [`https://campus-copilot-scraper.onrender.com/health`](https://campus-copilot-scraper.onrender.com/health)
 
 ---
 
-## Architecture & Data Flow
+## 🏗️ Architecture & Data Flow
 
 ```
 +-------------------------------------------------------------------------+
 |                  CAMPUS NOTIFIER (Orchestration Engine)                 |
+|       Portal: https://campus-notifier-portal.onrender.com               |
 |                                                                         |
 |  1. Student registers on Web Portal -> Password encrypted with AES-256 |
 |  2. Encrypted profile stored securely in Supabase Database              |
@@ -27,7 +33,7 @@ This repository serves as the remote scraping engine for **[Campus Notifier](htt
                                      v
 +-------------------------------------------------------------------------+
 |                 CAMPUS COPILOT (Scraper Microservice)                   |
-|                      Hosted on Render Web Service                       |
+|       Service: https://campus-copilot-scraper.onrender.com              |
 |                                                                         |
 |  1. Validates Shared Secret API Key (`INTERNAL_API_KEY`)                |
 |  2. Launches Headless Chromium via Playwright                          |
@@ -50,13 +56,13 @@ This repository serves as the remote scraping engine for **[Campus Notifier](htt
 
 ---
 
-## Security & Credential Handling
+## 🔐 Security & Credential Handling
 
 Student credential security is built with zero-plaintext exposure:
 
 1. **AES-256-GCM Encryption**:
    - Student LMS passwords are never stored in plaintext.
-   - When a student registers via the web portal, their password is encrypted using authenticated **AES-256-GCM** with a 64-character master hex key (`CREDENTIAL_KEY`) and a unique initialization vector (IV) per entry.
+   - When a student registers via the web portal ([https://campus-notifier-portal.onrender.com](https://campus-notifier-portal.onrender.com)), their password is encrypted using authenticated **AES-256-GCM** with a 64-character master hex key (`CREDENTIAL_KEY`) and a unique initialization vector (IV) per entry.
 2. **Ephemeral In-Memory Handling**:
    - Passwords are only decrypted in-memory during the active scrape execution inside GitHub Actions / local runtime.
    - The scraper receives credentials over TLS/HTTPS, authenticates with VIT LMS, extracts course data, and immediately drops the session from memory.
@@ -67,7 +73,7 @@ Student credential security is built with zero-plaintext exposure:
 
 ---
 
-## API Endpoints
+## 🛠️ API Endpoints
 
 ### 1. Health Check
 `GET /health`
@@ -116,7 +122,7 @@ Student credential security is built with zero-plaintext exposure:
 
 ---
 
-## Local Development
+## 🚀 Local Development
 
 ```bash
 # Navigate to scraper directory
@@ -134,6 +140,6 @@ The scraper will be running on `http://localhost:10000`.
 
 ---
 
-## Related Repositories
+## 📄 Related Repositories
 
 - **[campus-notifier](https://github.com/Nehareddy1234/campus-notifier)**: Main multi-user notification engine, student registration web portal, Supabase integration, and cron dispatcher.
