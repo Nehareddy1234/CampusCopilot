@@ -28,13 +28,44 @@ function requireInternalAuth(req: Request, res: Response, next: express.NextFunc
   next();
 }
 
-// Relocated LMS login/scraping endpoint
-let scrapeInFlight = false;
-app.post('/scrape', requireInternalAuth, async (req: Request, res: Response) => {
-  if (scrapeInFlight) {
-    return res.status(429).json({ error: 'A scrape is already in progress. Please wait for it to finish before logging in again.' });
+// Concurrency Queue: Instead of rejecting with 429, queue requests sequentially
+let queue: Array<() => Promise<void>> = [];
+let isProcessingQueue = false;
+
+async function processQueue() {
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
+
+  while (queue.length > 0) {
+    const job = queue.shift();
+    if (job) {
+      try {
+        await job();
+      } catch (err) {
+        console.error('Error executing queued scrape job:', err);
+      }
+    }
   }
-  scrapeInFlight = true;
+
+  isProcessingQueue = false;
+}
+
+function enqueueScrape<T>(task: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    queue.push(async () => {
+      try {
+        const result = await task();
+        resolve(result);
+      } catch (err) {
+        reject(err);
+      }
+    });
+    processQueue();
+  });
+}
+
+// Scrape endpoint with auto-queuing (No 429 rate limits)
+app.post('/scrape', requireInternalAuth, async (req: Request, res: Response) => {
   const { username, password, lmsUrl } = req.body || {};
 
   let validatedLmsUrl: URL;
@@ -49,8 +80,10 @@ app.post('/scrape', requireInternalAuth, async (req: Request, res: Response) => 
   }
 
   try {
-    // Zero-credential logging/persistence guarantee: username/password are only passed in memory to Playwright
-    const result = await loginToLMS(username.trim(), password, validatedLmsUrl.toString());
+    const result = await enqueueScrape(() => 
+      loginToLMS(username.trim(), password, validatedLmsUrl.toString())
+    );
+
     res.json({
       records: result.records,
       assignments: result.assignments,
@@ -59,13 +92,16 @@ app.post('/scrape', requireInternalAuth, async (req: Request, res: Response) => 
       allowlist: result.allowlist
     });
   } catch (error) {
-    const message = (error as Error).message;
+    const message = (error as Error).message || 'Scraping failed';
     console.error('Scraping error:', message);
+    
+    if (message.toLowerCase().includes('credential') || message.toLowerCase().includes('login') || message.toLowerCase().includes('password')) {
+      return res.status(400).json({ error: message });
+    }
+    
     res.status(502).json({
-      error: message.startsWith('LMS login failed') ? message : 'Unable to connect to LMS or perform scraping.'
+      error: 'Unable to connect to LMS or perform scraping.'
     });
-  } finally {
-    scrapeInFlight = false;
   }
 });
 
