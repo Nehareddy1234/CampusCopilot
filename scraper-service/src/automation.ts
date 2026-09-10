@@ -260,27 +260,50 @@ export async function loginToLMS(username: string, password: string, lmsUrl = DE
   const assignmentsToSave: Assignment[] = [];
 
   try {
-    console.log("Navigating to login page...");
-    await page.goto(lmsUrl, { waitUntil: "domcontentloaded" });
+    const cleanUsername = username.trim().toUpperCase();
+    console.log(`Navigating to login page for user: ${cleanUsername}...`);
+    await page.goto(lmsUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    // Typical Moodle login selectors
-    await page.fill('input#username, input[name="username"]', username);
+    await page.waitForSelector('input#username, input[name="username"]', { timeout: 15000 });
+    await page.fill('input#username, input[name="username"]', cleanUsername);
     await page.fill('input#password, input[name="password"]', password);
 
-    console.log("Clicking login...");
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "domcontentloaded" }),
-      page.click('button#loginbtn, button[name="loginbtn"], input[type="submit"]')
-    ]);
+    console.log("Submitting login form...");
+    await page.click('button#loginbtn, button[name="loginbtn"], input[type="submit"]');
 
-    // Simple verification – fetch the title after login
-    const loginErrors = await page.locator('.loginerrors, .alert-danger, [role="alert"]').allTextContents();
-    if (page.url().includes('/login/') || loginErrors.some(text => /invalid|incorrect|error/i.test(text))) {
-      throw new Error('LMS login failed. Check the website address, username, and password.');
+    // Robust loop waiting for Moodle session transition
+    let loggedIn = false;
+    for (let i = 0; i < 20; i++) {
+      await page.waitForTimeout(500);
+      const currentUrl = page.url();
+
+      const errorText = await page.locator('.loginerrors, .alert-danger, [role="alert"]').allTextContents().catch(() => []);
+      const hasExplicitError = errorText.some(t => /invalid|incorrect|failed|re-enter/i.test(t));
+      if (hasExplicitError) {
+        throw new Error('Invalid VIT LMS credentials. Please verify your registration number and password.');
+      }
+
+      const hasUserMenu = await page.$('.usermenu, .userpicture, a[href*="logout.php"], a[href*="/my/"]');
+      if (!currentUrl.includes('/login/') || hasUserMenu) {
+        loggedIn = true;
+        break;
+      }
+    }
+
+    if (!loggedIn) {
+      const errorText = await page.locator('.loginerrors, .alert-danger, [role="alert"]').allTextContents().catch(() => []);
+      if (errorText.some(t => /invalid|incorrect|failed|re-enter/i.test(t))) {
+        throw new Error('Invalid VIT LMS credentials. Please verify your registration number and password.');
+      }
+      const cookies = await page.context().cookies();
+      const hasMoodleCookie = cookies.some(c => c.name.startsWith('MoodleSession'));
+      if (!hasMoodleCookie && page.url().includes('/login/')) {
+        throw new Error('LMS login failed. Check your registration number and password.');
+      }
     }
 
     const title = await page.title();
-    console.log(`Logged in. Title: ${title}`);
+    console.log(`Successfully logged in. Title: ${title}, URL: ${page.url()}`);
 
     if (!page.url().includes('/my/courses.php')) {
       await page.goto(new URL('/my/courses.php', lmsUrl).toString(), { waitUntil: "domcontentloaded" });
